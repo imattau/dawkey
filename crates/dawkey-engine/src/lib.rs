@@ -18,6 +18,7 @@ mod mix;
 mod notes;
 mod plugin;
 mod record;
+mod tuner;
 
 pub use engine::{
     EngineBusy, EngineController, EngineProcessor, MIDI_OUT_EVENTS, TransportStatus, new_engine,
@@ -35,6 +36,7 @@ pub use plugin::{
 pub use record::{
     MIDI_RING, Mark, MidiRecord, RecordSession, RecordShared, RecordTap, RecordTaps, record_session,
 };
+pub use tuner::{TunerTap, TunerTarget, tuner_session};
 
 /// Largest block the processor renders at once. Longer requests are split.
 pub const MAX_BLOCK: usize = 4096;

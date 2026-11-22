@@ -566,6 +566,63 @@ fn monitoring_hears_the_racks_effects_without_recording() {
     );
 }
 
+/// The tuner reads an armed track's live input and names the nearest
+/// guitar string, even with the transport stopped.
+#[test]
+fn tuner_reads_live_input_while_stopped() {
+    let mut studio = Studio::new(
+        LoadedProject::new(Project::default()),
+        AudioBackend::Virtual,
+    )
+    .unwrap();
+    let flush = |studio: &mut Studio| {
+        studio.advance(0.001).unwrap();
+    };
+    let track = studio
+        .execute(AddTrack::default().into())
+        .unwrap()
+        .track
+        .unwrap();
+    flush(&mut studio);
+    studio
+        .execute(SetTrackArm { track, armed: true }.into())
+        .unwrap();
+    flush(&mut studio);
+
+    // A2, 110 Hz, loud enough to clear the detector's level floor.
+    let rate = studio.sample_rate();
+    let tone: Vec<f32> = (0..rate as usize * 2)
+        .map(|i| (0.4 * (std::f64::consts::TAU * 110.0 * i as f64 / f64::from(rate)).sin()) as f32)
+        .collect();
+    studio
+        .set_virtual_input(Some(AudioData::new(vec![tone])))
+        .unwrap();
+    studio.start_tuner(track).unwrap();
+    assert!(!studio.transport().playing, "the transport never starts");
+
+    let reading = (0..50)
+        .find_map(|_| {
+            studio.advance(0.02).unwrap();
+            studio.tuner_reading()
+        })
+        .expect("the tuner never heard a pitch");
+    assert_eq!(reading.string, 1, "{reading:?}"); // A2, the open A string
+    assert!(reading.cents.abs() < 15.0, "{reading:?}");
+
+    // Disarming stops it.
+    studio
+        .execute(
+            SetTrackArm {
+                track,
+                armed: false,
+            }
+            .into(),
+        )
+        .unwrap();
+    flush(&mut studio);
+    assert!(studio.tuner_reading().is_none());
+}
+
 #[test]
 fn mixdown_tracks_bounces_audio_synth_and_bus_tracks_and_restores() {
     use dawkey_core::{AddClip, AddMidiClip, NoteSpec, RestoreMixdownTracks, TrackKind};

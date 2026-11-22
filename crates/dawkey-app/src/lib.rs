@@ -27,6 +27,7 @@ mod take_input;
 mod tempo_input;
 mod text_input;
 mod theme;
+mod tuner_input;
 mod view;
 
 use std::path::Path;
@@ -829,6 +830,26 @@ impl App {
 
     fn view_model(&mut self) -> ViewModel {
         let meters = self.studio.display_meters();
+        // Disarming the tuned track stops the tuner (in `Studio`) and
+        // closes its panel (here).
+        let tuner = match self.view.shared.tuner_track {
+            Some(track)
+                if self
+                    .studio
+                    .session()
+                    .project()
+                    .track(track)
+                    .is_some_and(|t| t.armed) =>
+            {
+                self.studio.tuner_reading()
+            }
+            Some(_) => {
+                self.view.shared.tuner_track = None;
+                self.studio.stop_tuner();
+                None
+            }
+            None => None,
+        };
         let status = self.studio.engine_status();
         // Plugin names come from the catalog; don't scan just to draw a
         // project without external plugins.
@@ -1142,6 +1163,7 @@ impl App {
             mcp_http: self.mcp_http_state.clone(),
             mcp_token_path: self.mcp_token_path().map(mcp_http::tilde),
             deleted_archive_summary,
+            tuner,
             exporting: self.export.as_ref().map(|e| {
                 let name = e
                     .path

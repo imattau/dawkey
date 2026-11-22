@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use dawkey_core::{
-    AddClip, AddMidiClip, AddTrack, ClipId, NoteSpec, Project, SetClipFades, TrackId, TrackKind,
-    Waveform,
+    AddClip, AddMidiClip, AddTrack, ClipId, NoteSpec, Project, SetClipFades, SetTrackArm, TrackId,
+    TrackKind, Waveform,
 };
 use dawkey_media::{AudioData, DecodedFile};
 use dawkey_studio::{AudioBackend, LoadedProject, Studio};
@@ -1434,6 +1434,51 @@ fn arm_record_with_keys_and_clicks() {
         .expect("a take at 0 s");
     assert_eq!(take.length, 24_000);
     assert_eq!(app.studio.session().undo_label(), Some("record"));
+}
+
+/// The tuner button only shows on an armed audio track, opens the panel,
+/// and disarming (or closing it) stops the tuner.
+#[test]
+fn tuner_button_opens_and_closes_the_panel() {
+    let mut app = app();
+    let track = add_track(&mut app, "Guitar");
+    assert!(
+        app.access_tree()
+            .find(&format!("track/{track}/tuner"))
+            .is_none()
+    );
+
+    click(&mut app, &format!("track/{track}/arm")).unwrap();
+    assert!(
+        app.access_tree()
+            .find(&format!("track/{track}/tuner"))
+            .is_some()
+    );
+
+    click(&mut app, &format!("track/{track}/tuner")).unwrap();
+    assert_eq!(app.view_state().shared.tuner_track, Some(TrackId(track)));
+    assert!(app.access_tree().find("tuner").is_some());
+
+    click(&mut app, "tuner/close").unwrap();
+    assert_eq!(app.view_state().shared.tuner_track, None);
+    assert!(app.access_tree().find("tuner").is_none());
+
+    // Opening it again, then disarming (its backdrop is modal, so this
+    // goes straight through the command rather than a click), stops and
+    // closes it too.
+    click(&mut app, &format!("track/{track}/tuner")).unwrap();
+    assert!(app.view_state().shared.tuner_track.is_some());
+    app.studio
+        .execute(
+            SetTrackArm {
+                track: TrackId(track),
+                armed: false,
+            }
+            .into(),
+        )
+        .unwrap();
+    assert!(app.access_tree().find("tuner").is_none());
+    assert_eq!(app.view_state().shared.tuner_track, None);
 }
 
 /// A recording in progress is unsaved work: opening another project or

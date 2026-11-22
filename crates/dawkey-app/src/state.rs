@@ -716,6 +716,9 @@ pub struct SharedViewState {
     pub recovery: Option<dawkey_studio::Recovery>,
     /// The preferences panel is open.
     pub prefs_open: bool,
+    /// The tuner panel is open, tuning this track (its input must stay
+    /// armed, or the tuner stops).
+    pub tuner_track: Option<TrackId>,
     /// Current category in the Preferences panel.
     pub prefs_page: PrefsPage,
     /// The export dialog is open.
@@ -755,6 +758,7 @@ impl Default for SharedViewState {
             text_edit: None,
             recovery: None,
             prefs_open: false,
+            tuner_track: None,
             prefs_page: PrefsPage::AudioMidi,
             export_dialog: false,
             export: ExportSettings::default(),

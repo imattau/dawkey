@@ -13,6 +13,7 @@ use crate::midi::{MidiEvent, MidiOut};
 use crate::mix::{self, Live, MidiOutput};
 use crate::plugin::PluginProcessor;
 use crate::record::RecordSession;
+use crate::tuner::TunerTarget;
 
 /// Stands in for missing input buffers.
 static SILENCE: [f32; MAX_BLOCK] = [0.0; MAX_BLOCK];
@@ -30,6 +31,9 @@ enum Message {
     /// Start capturing input while playing.
     StartRecording(Box<RecordSession>),
     StopRecording,
+    /// Start (or replace) the tuner's input tap.
+    StartTuner(Box<TunerTarget>),
+    StopTuner,
 }
 
 /// Things the real-time thread is done with, freed by the controller.
@@ -40,6 +44,11 @@ enum Retired {
         reason = "held only so it is dropped off the real-time thread"
     )]
     Session(Box<RecordSession>),
+    #[expect(
+        dead_code,
+        reason = "held only so it is dropped off the real-time thread"
+    )]
+    Tuner(Box<TunerTarget>),
 }
 
 /// State published by the real-time thread.
@@ -103,6 +112,7 @@ pub fn new_engine(sample_rate: u32, graph: Graph) -> (EngineController, EnginePr
         clock: 0,
         chase: false,
         session: None,
+        tuner: None,
         lanes: [vec![0.0; MAX_BLOCK], vec![0.0; MAX_BLOCK]],
         midi_out: Vec::with_capacity(MIDI_OUT_EVENTS),
     };
@@ -197,6 +207,16 @@ impl EngineController {
         self.send(Message::StopRecording)
     }
 
+    /// Starts (or replaces) the tuner's input tap.
+    pub fn start_tuner(&mut self, target: TunerTarget) -> Result<(), EngineBusy> {
+        self.send(Message::StartTuner(Box::new(target)))
+    }
+
+    /// Stops the tuner's input tap.
+    pub fn stop_tuner(&mut self) -> Result<(), EngineBusy> {
+        self.send(Message::StopTuner)
+    }
+
     /// Transport state as last published by the real-time thread.
     pub fn transport(&self) -> TransportStatus {
         TransportStatus {
@@ -245,6 +265,7 @@ pub struct EngineProcessor {
     /// controllers at the next block.
     chase: bool,
     session: Option<Box<RecordSession>>,
+    tuner: Option<Box<TunerTarget>>,
     lanes: [Vec<f32>; 2],
     /// MIDI for devices, until the backend takes it.
     midi_out: Vec<MidiOut>,
@@ -352,6 +373,11 @@ impl EngineProcessor {
             let chase = self.playing && std::mem::take(&mut self.chase);
             let block_input =
                 [0, 1].map(|c| input[c].get(range.clone()).unwrap_or(&SILENCE[..len]));
+            // Unconditional, so the tuner reads live input whether or not
+            // the transport is playing.
+            if let Some(tuner) = &mut self.tuner {
+                tuner.push(block_input);
+            }
             self.render_block(
                 live,
                 chase,
@@ -413,7 +439,11 @@ impl EngineProcessor {
             if self.retired.is_some()
                 && matches!(
                     self.commands.peek(),
-                    Ok(Message::Graph(_) | Message::StartRecording(_) | Message::StopRecording)
+                    Ok(Message::Graph(_)
+                        | Message::StartRecording(_)
+                        | Message::StopRecording
+                        | Message::StartTuner(_)
+                        | Message::StopTuner)
                 )
             {
                 break;
@@ -458,6 +488,16 @@ impl EngineProcessor {
                     if let Some(old) = self.session.take() {
                         old.finish();
                         self.retire(Retired::Session(old));
+                    }
+                }
+                Message::StartTuner(target) => {
+                    if let Some(old) = self.tuner.replace(target) {
+                        self.retire(Retired::Tuner(old));
+                    }
+                }
+                Message::StopTuner => {
+                    if let Some(old) = self.tuner.take() {
+                        self.retire(Retired::Tuner(old));
                     }
                 }
             }

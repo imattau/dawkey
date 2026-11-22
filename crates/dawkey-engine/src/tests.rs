@@ -15,7 +15,7 @@ use dawkey_media::AudioData;
 
 use crate::{
     Graph, MAX_BLOCK, Mark, MediaPool, MidiEvent, MidiOut, MidiRecord, device_tag, new_engine,
-    record_session, render_offline,
+    record_session, render_offline, tuner_session,
 };
 
 const RATE: u32 = 48_000;
@@ -444,6 +444,30 @@ fn offline_renders_play_straight_through_the_loop() {
     assert_eq!(out[3_999], 23_999.0);
     assert_eq!(out[4_000], 24_000.0);
     assert_eq!(out[9_999], 29_999.0);
+}
+
+#[test]
+fn tuner_taps_raw_input_while_stopped() {
+    let (mut ctl, mut proc) = new_engine(RATE, Graph::empty());
+    let (target, mut tap) = tuner_session(InputChannels::Left, 10_000);
+    ctl.start_tuner(target).unwrap();
+
+    let input_l = ramp(256, 0);
+    let input_r: Vec<f32> = input_l.iter().map(|v| -v).collect();
+    let mut l = vec![0.0; 256];
+    let mut r = vec![0.0; 256];
+    // Not playing: the transport doesn't move, but the tuner still sees it.
+    proc.process_with_input([&input_l, &input_r], &[], &mut l, &mut r);
+    assert_eq!(ctl.transport().position, 0);
+    assert_eq!(tap.samples.pop().unwrap(), 0.0);
+    assert_eq!(tap.samples.pop().unwrap(), 1.0);
+    assert_eq!(tap.samples.slots(), 254);
+
+    ctl.stop_tuner().unwrap();
+    proc.process(&mut [], &mut []);
+    // A later block isn't pushed once the tap is stopped.
+    proc.process_with_input([&input_l, &input_r], &[], &mut l, &mut r);
+    assert_eq!(tap.samples.slots(), 254);
 }
 
 #[test]

@@ -709,6 +709,9 @@ impl App {
     pub(crate) fn close_overlays(&mut self) {
         self.view.shared.export_dialog = false;
         self.view.shared.prefs_open = false;
+        if self.view.shared.tuner_track.take().is_some() {
+            self.studio.stop_tuner();
+        }
         self.view.track_menu = None;
         self.view.shared.mixdown_confirm = None;
         self.view.shared.delete_confirm = None;

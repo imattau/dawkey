@@ -25,6 +25,7 @@ mod recovery;
 pub(crate) mod step_sequencer;
 pub(crate) mod tempo;
 mod track_menu;
+mod tuner;
 
 use std::sync::Arc;
 
@@ -108,6 +109,8 @@ pub(crate) struct ViewModel {
     pub(crate) mcp_token_path: Option<String>,
     /// Label for restoring the most recently non-destructively deleted track(s).
     pub(crate) deleted_archive_summary: Option<String>,
+    /// The tuner panel's last reading, while it's open.
+    pub(crate) tuner: Option<dawkey_studio::TunerReading>,
 }
 
 /// A plugin the picker offers.
@@ -471,6 +474,7 @@ pub(crate) fn build(
         .child(statusbar(model, ui, [0.0, 0.0, radius, radius]))
         .children(export::dialog(model, view, ui, area, radius))
         .children(prefs::panel(model, view, ui, area, radius))
+        .children(tuner::panel(model, view, ui, area, radius))
         .children(recovery::dialog(view, ui, area, radius))
         .children(track_menu::menu(model, view, ui, area))
         .children(track_menu::popup(model, view, area))
@@ -864,6 +868,9 @@ pub(crate) fn track_buttons(track: &TrackView, ui: &UiState) -> Vec<Node> {
     }
     if track.kind != TrackKind::Bus {
         buttons.push(small("arm", "Record arm", track.armed, pal().record_on));
+    }
+    if track.kind == TrackKind::Audio && track.armed {
+        buttons.push(small("tuner", "Tuner", false, pal().accent));
     }
     buttons
 }

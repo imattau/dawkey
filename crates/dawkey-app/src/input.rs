@@ -127,6 +127,9 @@ impl App {
         if let Some(result) = self.on_prefs_click(&parts) {
             return result;
         }
+        if let Some(result) = self.on_tuner_click(&parts) {
+            return result;
+        }
         if let Some(result) = self.on_export_click(&parts) {
             return result;
         }
@@ -283,6 +286,10 @@ impl App {
                     .into(),
                 };
                 self.execute(command)
+            }
+            ["track", track, "tuner"] => {
+                let track = parse_track(track)?;
+                self.open_tuner(track)
             }
             // Clicking a track's header selects it (Ctrl toggles, Shift extends range).
             ["track", track] => {
@@ -1122,6 +1129,9 @@ impl App {
             return result;
         }
         if let Some(result) = self.on_prefs_key(key) {
+            return result;
+        }
+        if let Some(result) = self.on_tuner_key(key) {
             return result;
         }
         if let Some(result) = self.on_plugin_key(key, m) {

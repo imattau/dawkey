@@ -14,6 +14,7 @@ name = "dawkey_studio"
 dawkey-backend-pipewire.workspace = true
 dawkey-core.workspace = true
 dawkey-engine.workspace = true
+dawkey-listen.workspace = true
 dawkey-media.workspace = true
 dawkey-plugins.workspace = true
 hound.workspace = true

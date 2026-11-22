@@ -431,6 +431,57 @@ impl MidiCapture {
     }
 }
 
+/// How far a detected pitch sits from the nearest string of a tuner's
+/// tuning.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct TunerReading {
+    pub hz: f64,
+    /// Index into the tuning's strings, low to high.
+    pub string: usize,
+    /// How far `hz` is from that string's pitch, in cents (positive: sharp).
+    pub cents: f64,
+    pub level_db: f64,
+}
+
+/// A tuner's live input tap.
+struct TunerState {
+    track: TrackId,
+    tap: dawkey_engine::TunerTap,
+    detector: dawkey_listen::PitchDetector,
+    /// The most recent samples, up to one detection window.
+    window: VecDeque<f32>,
+    last: Option<TunerReading>,
+}
+
+impl TunerState {
+    /// Drains newly arrived samples and, once a full window has
+    /// accumulated, detects its pitch against standard guitar tuning.
+    fn poll(&mut self) -> Option<TunerReading> {
+        let want = self.detector.window();
+        while let Ok(s) = self.tap.samples.pop() {
+            if self.window.len() == want {
+                self.window.pop_front();
+            }
+            self.window.push_back(s);
+        }
+        if self.window.len() < want {
+            return self.last;
+        }
+        let frame = self.window.make_contiguous();
+        self.last = self.detector.detect(frame).map(|(hz, level_db)| {
+            let (string, cents) =
+                dawkey_listen::nearest_target(hz, &dawkey_listen::standard_guitar());
+            TunerReading {
+                hz,
+                string,
+                cents,
+                level_db,
+            }
+        });
+        self.last
+    }
+}
+
 /// Audio rendered offline from a snapshot of the project. `Send`, so it can
 /// run on a worker thread while the studio keeps working. Its plugins are
 /// fresh instances; give the [`RenderLeftovers`] back to
@@ -552,6 +603,7 @@ pub struct Studio {
     meters: MeterAccumulator,
     recording: Option<Recording>,
     last_recording: Option<RecordingReport>,
+    tuner: Option<TunerState>,
     /// Virtual backend only: audio fed to the inputs, and how much of it
     /// has been consumed.
     virtual_input: Option<(AudioData, usize)>,
@@ -675,6 +727,7 @@ impl Studio {
             meters: MeterAccumulator::default(),
             recording: None,
             last_recording: None,
+            tuner: None,
             virtual_input: None,
             virtual_midi: Vec::new(),
             sent_midi: Vec::new(),
@@ -718,6 +771,8 @@ impl Studio {
         {
             tracing::warn!("finishing the recording: {e}");
         }
+        // The tuned track belongs to the old project either way.
+        self.stop_tuner();
         let rate = loaded.session.project().sample_rate;
         if rate != self.sample_rate() {
             dawkey_plugins::warm_sample_kits(rate);
@@ -1638,6 +1693,57 @@ impl Studio {
     fn drain_meters(&mut self) {
         let reading = self.engine.take_meters();
         self.meters.add(&reading);
+    }
+
+    /// Starts tuning `track` (must be armed and audio): a live, no-undo-step
+    /// read of its input against standard guitar tuning. Replaces whatever
+    /// track was being tuned.
+    pub fn start_tuner(&mut self, track: TrackId) -> Result<(), StudioError> {
+        let project = self.session.project();
+        let t = project
+            .track(track)
+            .ok_or_else(|| StudioError::Invalid(format!("no such track ({track:?})")))?;
+        if !(t.armed && t.kind == TrackKind::Audio) {
+            return Err(StudioError::Invalid(
+                "the tuned track must be armed and audio (set_track_arm)".into(),
+            ));
+        }
+        let rate = project.sample_rate;
+        // A third of a second: ample slack for a ~64 ms analysis window
+        // polled every UI tick, far short of the recorder's 20 s.
+        let (target, tap) = dawkey_engine::tuner_session(t.input, rate as usize / 3);
+        self.engine.start_tuner(target)?;
+        self.tuner = Some(TunerState {
+            track,
+            tap,
+            detector: dawkey_listen::PitchDetector::new(rate, 70.0, 500.0),
+            window: VecDeque::new(),
+            last: None,
+        });
+        Ok(())
+    }
+
+    /// Stops the tuner, if one is running.
+    pub fn stop_tuner(&mut self) {
+        if self.tuner.take().is_some() {
+            let _ = self.engine.stop_tuner();
+        }
+    }
+
+    /// The tuner's last reading, or `None` if it isn't running, hasn't
+    /// heard a clear pitch yet, or its track was disarmed (which stops it).
+    pub fn tuner_reading(&mut self) -> Option<TunerReading> {
+        let still_armed = self.tuner.as_ref().is_some_and(|t| {
+            self.session
+                .project()
+                .track(t.track)
+                .is_some_and(|track| track.armed)
+        });
+        if !still_armed {
+            self.stop_tuner();
+            return None;
+        }
+        self.tuner.as_mut().and_then(TunerState::poll)
     }
 
     pub fn engine_status(&self) -> EngineStatus {

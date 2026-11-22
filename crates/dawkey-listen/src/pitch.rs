@@ -257,6 +257,72 @@ impl Yin {
     }
 }
 
+/// Detects the pitch of one fixed-size window of samples at a time, for a
+/// live source fed a window at a time (a tuner, say) rather than a whole
+/// recording up front. Reuses one [`Yin`] (which only holds FFT plans)
+/// across calls.
+pub struct PitchDetector {
+    rate: f64,
+    window: usize,
+    min_lag: usize,
+    yin: Yin,
+}
+
+impl std::fmt::Debug for PitchDetector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PitchDetector")
+            .field("rate", &self.rate)
+            .field("window", &self.window)
+            .field("min_lag", &self.min_lag)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PitchDetector {
+    /// A detector over `rate`-Hz windows, for fundamentals from `min_hz` to
+    /// `max_hz`. [`Self::window`] says how many samples [`Self::detect`]
+    /// wants each call.
+    pub fn new(rate: u32, min_hz: f64, max_hz: f64) -> Self {
+        let rate_f = f64::from(rate);
+        // The window must hold at least two periods of `min_hz` past its
+        // analysis half, since `Yin::pitch` correlates the first half
+        // against the whole window.
+        let window = ((2.0 * rate_f / min_hz) as usize)
+            .max(64)
+            .next_power_of_two();
+        let min_lag = ((rate_f / max_hz).floor() as usize).max(2);
+        Self {
+            rate: rate_f,
+            window,
+            min_lag,
+            yin: Yin::new(window),
+        }
+    }
+
+    /// How many samples one [`Self::detect`] call wants.
+    pub fn window(&self) -> usize {
+        self.window
+    }
+
+    /// The fundamental frequency in `frame` (exactly [`Self::window`]
+    /// samples) and its RMS level in dBFS, or `None` below -60 dBFS or with
+    /// no clear pitch.
+    pub fn detect(&self, frame: &[f32]) -> Option<(f64, f64)> {
+        let w = self.window / 2;
+        let ms = frame[..w]
+            .iter()
+            .map(|s| f64::from(*s).powi(2))
+            .sum::<f64>()
+            / w as f64;
+        let level_db = 10.0 * (ms + 1e-20).log10();
+        if level_db <= -60.0 {
+            return None;
+        }
+        let lag = self.yin.pitch(frame, self.min_lag)?;
+        Some((self.rate / lag, level_db))
+    }
+}
+
 /// A note heard in a pitch track.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct RawNote {
@@ -416,5 +482,33 @@ mod tests {
         let x = line(&[(45.0, 0.6)], rate);
         let found = notes(&track(&x, rate), &[0.3]);
         assert_eq!(found.len(), 2, "{found:?}");
+    }
+
+    /// A pure tone at `hz`, `window` samples long.
+    fn tone(hz: f64, window: usize, rate: u32) -> Vec<f32> {
+        (0..window)
+            .map(|i| (0.4 * (std::f64::consts::TAU * hz * i as f64 / f64::from(rate)).sin()) as f32)
+            .collect()
+    }
+
+    #[test]
+    fn detects_a_steady_pitch() {
+        let rate = 48_000;
+        let detector = PitchDetector::new(rate, 70.0, 500.0);
+        let window = detector.window();
+        // A2, 110 Hz.
+        let x = tone(110.0, window, rate);
+        let (hz, level_db) = detector.detect(&x).unwrap_or_else(|| panic!("no pitch"));
+        let cents = 1200.0 * (hz / 110.0).log2();
+        assert!(cents.abs() < 10.0, "hz={hz} cents={cents}");
+        assert!(level_db > -20.0, "{level_db}");
+    }
+
+    #[test]
+    fn silence_has_no_pitch() {
+        let rate = 48_000;
+        let detector = PitchDetector::new(rate, 70.0, 500.0);
+        let x = vec![0.0f32; detector.window()];
+        assert!(detector.detect(&x).is_none());
     }
 }

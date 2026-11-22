@@ -23,6 +23,7 @@ mod pitch;
 mod rhythm;
 mod spectral;
 mod tonal;
+mod tuning;
 
 pub use describe::{
     DescribeOptions, Description, Levels, Moment, Note, Notes, Octave, Onset, Peak, Rhythm,
@@ -30,7 +31,9 @@ pub use describe::{
 };
 pub use mix::{Category, Finding, compare};
 pub use picture::{Panel, Picture, PictureKind, PictureOptions, picture, picture_of};
+pub use pitch::PitchDetector;
 pub use spectral::note_name;
+pub use tuning::{nearest_target, standard_guitar};
 
 /// Where a stretch of audio sits on the project's timeline, so times can be
 /// given in beats and bars and onsets checked against the grid. Audio that
