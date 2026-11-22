@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 
 mod describe;
+mod mix;
 mod picture;
 mod pitch;
 mod rhythm;
@@ -27,6 +28,7 @@ pub use describe::{
     DescribeOptions, Description, Levels, Moment, Note, Notes, Octave, Onset, Peak, Rhythm,
     Spectrum, Stereo, Tempo, Timeliness, Tonality, describe,
 };
+pub use mix::{Category, Finding, compare};
 pub use picture::{Panel, Picture, PictureKind, PictureOptions, picture, picture_of};
 pub use spectral::note_name;
 

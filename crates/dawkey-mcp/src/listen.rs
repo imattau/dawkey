@@ -27,31 +27,35 @@ const MAX_NOTES: usize = 64;
 const MAX_ONSETS: usize = 400;
 
 /// What describe_audio or view_audio listens to, worked out.
-struct Plan {
-    start_s: f64,
-    end_s: f64,
-    sample_rate: u32,
+pub(crate) struct Plan {
+    pub(crate) start_s: f64,
+    pub(crate) end_s: f64,
+    pub(crate) sample_rate: u32,
     /// The project's grid; `None` for a file.
-    maps: Option<Maps>,
-    renders: Vec<Render>,
+    pub(crate) maps: Option<Maps>,
+    pub(crate) renders: Vec<Render>,
     /// A file's audio from `start_s` to `end_s`, instead of renders.
     file: Option<Arc<Vec<Vec<f32>>>>,
     /// The project's name or the file's, for titles.
-    name: String,
-    tracks: Option<Vec<TrackId>>,
-    path: Option<PathBuf>,
+    pub(crate) name: String,
+    pub(crate) tracks: Option<Vec<TrackId>>,
+    pub(crate) path: Option<PathBuf>,
 }
 
 /// One render of a plan: the tracks to solo (none: everything), what to
 /// call it, and for a stem, its track and name.
-struct Render {
-    solo: Option<Vec<TrackId>>,
-    label: String,
-    stem: Option<(TrackId, String)>,
+pub(crate) struct Render {
+    pub(crate) solo: Option<Vec<TrackId>>,
+    pub(crate) label: String,
+    pub(crate) stem: Option<(TrackId, String)>,
 }
 
 impl DawkeyMcp {
-    async fn plan_listen(&self, source: AudioSource, with_mix: bool) -> Result<Plan, String> {
+    pub(crate) async fn plan_listen(
+        &self,
+        source: AudioSource,
+        with_mix: bool,
+    ) -> Result<Plan, String> {
         let AudioSource {
             start_s,
             end_s,
@@ -162,7 +166,7 @@ impl DawkeyMcp {
 
     /// Runs `f` on each of `plan`'s renders (or its file) on a blocking
     /// thread, one render at a time, so stems needn't all be in memory.
-    async fn listen_each<T, F>(&self, plan: &Plan, f: F) -> Result<Vec<T>, String>
+    pub(crate) async fn listen_each<T, F>(&self, plan: &Plan, f: F) -> Result<Vec<T>, String>
     where
         T: Send + 'static,
         F: Fn(&Clip<'_>, &str) -> T + Send + Sync + 'static,

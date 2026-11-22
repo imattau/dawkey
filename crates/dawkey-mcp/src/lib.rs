@@ -15,6 +15,7 @@
 mod batch;
 pub mod http;
 mod listen;
+mod mix_review;
 mod state;
 mod times;
 mod tools;
@@ -114,7 +115,11 @@ notes a line plays (pitch, bar, cents off), onsets against the beat grid
 dynamics and true peak, and observations in plain words; view_audio
 draws it as an image (a spectrogram with bars numbered, a spectrum with a
 curve per stem, or a chromagram with chords). Both take a range, `tracks`
-or `stems: true`, or an audio file (`path`).
+or `stems: true`, or an audio file (`path`). mix_review compares tracks
+against each other for masking, level balance, headroom, clipping and
+stereo issues, with a batch-ready `suggestion` (set_track_gain or
+set_track_pan calls) on findings with a safe generic fix; it changes
+nothing itself.
 export_audio writes the mix (the whole song by default) to a WAV, FLAC,
 Ogg Vorbis (`quality`) or Opus (`bitrate_kbps`) file (with `tags`), or
 stems with `stems: true`, or a seamless loop with `loop: true` (the tail
@@ -535,6 +540,7 @@ impl DawkeyMcp {
             RENDER_RANGE => self.render_range(try_args!(parse(args))).await,
             EXPORT_AUDIO => self.export_audio(try_args!(parse(args))).await,
             DESCRIBE_AUDIO => self.describe_audio(try_args!(parse(args))).await,
+            MIX_REVIEW => self.mix_review(try_args!(parse(args))).await,
             UI_TREE => {
                 let NoArgs {} = try_args!(parse(args));
                 run_app(studio, |a| {

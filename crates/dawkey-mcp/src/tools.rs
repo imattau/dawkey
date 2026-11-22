@@ -31,6 +31,7 @@ pub(crate) const RENDER_RANGE: &str = "render_range";
 pub(crate) const EXPORT_AUDIO: &str = "export_audio";
 pub(crate) const DESCRIBE_AUDIO: &str = "describe_audio";
 pub(crate) const VIEW_AUDIO: &str = "view_audio";
+pub(crate) const MIX_REVIEW: &str = "mix_review";
 pub(crate) const UI_TREE: &str = "ui_tree";
 pub(crate) const UI_CLICK: &str = "ui_click";
 pub(crate) const UI_SCREENSHOT: &str = "ui_screenshot";
@@ -640,6 +641,40 @@ pub(crate) struct DescribeAudio {
     pub(crate) onsets: bool,
 }
 
+/// Compare tracks against each other for what a mix engineer would flag:
+/// masking (two tracks busy in the same register at once), level balance
+/// (one far louder or quieter than the rest), headroom, clipping and stereo
+/// issues on the mix. Built on the same rendering and listening as
+/// describe_audio, so it's a mix critique rather than a per-track report.
+/// Each finding names the tracks it's about and, where there's a safe
+/// generic fix, a `gain_nudge_db` (add to that track's gain, or the
+/// master's for `headroom`) or `pan_nudge` (for `masking`: the suggested
+/// pan to move each named track towards, apart from each other) — turn
+/// those into set_track_gain/set_track_pan calls (batch them as one undo
+/// step) rather than applying anything here, since mix_review never changes
+/// the project itself.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MixReview {
+    /// Start in seconds. Default 0.
+    #[serde(default)]
+    pub(crate) start_s: Option<f64>,
+    /// End in seconds. Default: where the last clip ends. At most 600 s
+    /// after the start.
+    #[serde(default)]
+    pub(crate) end_s: Option<f64>,
+    /// Only compare these tracks (and judge headroom/clipping/stereo from
+    /// them soloed). Default: every audio and MIDI track that isn't muted.
+    #[serde(default)]
+    pub(crate) tracks: Option<Vec<TrackId>>,
+    /// Compare the timeline in segments this long (seconds).
+    #[serde(default)]
+    pub(crate) segment_length_s: Option<f64>,
+    /// Compare the timeline in segments of this many bars.
+    #[serde(default)]
+    pub(crate) segment_bars: Option<u32>,
+}
+
 /// What describe_audio and view_audio listen to: part of the project, or a
 /// file.
 #[derive(Debug, Clone)]
@@ -1068,6 +1103,7 @@ pub(crate) fn build_tools() -> Vec<Tool> {
         tool::<ExportAudio>(EXPORT_AUDIO, "", mutating.clone().idempotent(true)),
         tool::<DescribeAudio>(DESCRIBE_AUDIO, "", read_only.clone()),
         tool::<ViewAudio>(VIEW_AUDIO, "", read_only.clone()),
+        tool::<MixReview>(MIX_REVIEW, "", read_only.clone()),
         tool::<NoArgs>(
             UI_TREE,
             "Get the window state (size, scale, maximized, client-side decorations) and its \
