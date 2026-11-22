@@ -666,10 +666,13 @@ fn opening_over_unsaved_changes_asks_first() {
 fn project_buttons_in_the_status_bar() {
     let mut app = app();
 
-    // New, on a clean project, starts right away.
+    // New opens setup without replacing the current project.
     click(&mut app, "status/new_project").unwrap();
     assert_eq!(app.view_state().shared.confirm, None);
+    assert!(app.view_state().shared.new_project.is_some());
     assert!(app.studio.session().project().tracks.is_empty());
+    click(&mut app, "new_project/cancel").unwrap();
+    assert!(app.view_state().shared.new_project.is_none());
 
     // New, with unsaved changes, asks first.
     add_track(&mut app, "Keys");
@@ -683,8 +686,9 @@ fn project_buttons_in_the_status_bar() {
     click(&mut app, "status/new_project").unwrap();
     click(&mut app, "confirm/discard").unwrap();
     assert_eq!(app.view_state().shared.confirm, None);
-    assert!(app.studio.session().project().tracks.is_empty());
-    assert!(!app.studio.session().is_dirty());
+    assert!(app.view_state().shared.new_project.is_some());
+    assert_eq!(app.studio.session().project().tracks.len(), 1);
+    click(&mut app, "new_project/cancel").unwrap();
 
     // Open, with unsaved changes, asks first (like Ctrl+O).
     add_track(&mut app, "Keys");
@@ -721,6 +725,55 @@ fn project_buttons_in_the_status_bar() {
     assert_eq!(app.view_state().shared.confirm, Some(PendingAction::Close));
     click(&mut app, "confirm/cancel").unwrap();
     assert_eq!(app.view_state().shared.confirm, None);
+}
+
+#[test]
+fn new_project_setup_requests_a_save_location_without_replacing() {
+    let mut app = app();
+    add_track(&mut app, "Keep me");
+    click(&mut app, "status/new_project").unwrap();
+    click(&mut app, "confirm/discard").unwrap();
+    click(&mut app, "new_project/tempo_up").unwrap();
+    click(&mut app, "new_project/meter_up").unwrap();
+    click(&mut app, "new_project/meter_den_up").unwrap();
+    click(&mut app, "new_project/create").unwrap();
+    assert_eq!(
+        app.take_platform_requests(),
+        [PlatformRequest::CreateNewProject {
+            draft: crate::state::NewProjectDraft {
+                name: "Untitled".into(),
+                tempo: "121".into(),
+                numerator: "5".into(),
+                denominator: "8".into(),
+            },
+        }]
+    );
+    assert_eq!(app.studio.session().project().tracks.len(), 1);
+}
+
+#[test]
+fn creates_saved_project_with_setup_properties() {
+    let mut app = app();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Session.dawkey");
+    let draft = crate::state::NewProjectDraft {
+        name: "Untitled".into(),
+        tempo: "98".into(),
+        numerator: "7".into(),
+        denominator: "8".into(),
+    };
+    app.create_new_project(&path, &draft).unwrap();
+    let project = app.studio.session().project();
+    assert_eq!(project.name, "Session");
+    assert_eq!(project.tempo_bpm, 98.0);
+    assert_eq!(
+        (
+            project.time_signature.numerator,
+            project.time_signature.denominator
+        ),
+        (7, 8)
+    );
+    assert!(!app.studio.session().is_dirty());
 }
 
 #[test]

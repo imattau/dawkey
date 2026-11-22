@@ -16,6 +16,7 @@ mod arrange;
 mod confirm;
 mod export;
 mod mixer;
+pub(crate) mod new_project;
 mod piano_roll;
 pub(crate) mod plugins;
 mod prefs;
@@ -475,7 +476,8 @@ pub(crate) fn build(
         .children(track_menu::delete_confirm_dialog(
             model, view, ui, area, radius,
         ))
-        .children(confirm::dialog(model, view, ui, area, radius));
+        .children(confirm::dialog(model, view, ui, area, radius))
+        .children(new_project::dialog(model, view, ui, area, radius));
     Node::column()
         .fill()
         .padding(Insets::all(margin))

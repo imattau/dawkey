@@ -316,6 +316,59 @@ impl App {
                 self.request_action(PendingAction::NewProject);
                 Ok(())
             }
+            ["new_project", "cancel"] => {
+                self.view.shared.new_project = None;
+                self.rebuild();
+                Ok(())
+            }
+            ["new_project", "create"] => {
+                let Some(draft) = self.view.shared.new_project.take() else {
+                    return Ok(());
+                };
+                self.platform_requests
+                    .push(PlatformRequest::CreateNewProject { draft });
+                self.rebuild();
+                Ok(())
+            }
+            ["new_project", "tempo_up" | "tempo_down"] => {
+                if let Some(draft) = self.view.shared.new_project.as_mut() {
+                    let value = draft.tempo.parse::<u16>().unwrap_or(120);
+                    draft.tempo = (value
+                        .saturating_add(if parts[1] == "tempo_up" { 1 } else { 0 })
+                        .saturating_sub(if parts[1] == "tempo_down" { 1 } else { 0 })
+                        .clamp(20, 999))
+                    .to_string();
+                }
+                self.rebuild();
+                Ok(())
+            }
+            ["new_project", "meter_up" | "meter_down"] => {
+                if let Some(draft) = self.view.shared.new_project.as_mut() {
+                    let value = draft.numerator.parse::<u8>().unwrap_or(4);
+                    draft.numerator = (value
+                        .saturating_add(if parts[1] == "meter_up" { 1 } else { 0 })
+                        .saturating_sub(if parts[1] == "meter_down" { 1 } else { 0 })
+                        .clamp(1, 32))
+                    .to_string();
+                }
+                self.rebuild();
+                Ok(())
+            }
+            ["new_project", "meter_den_up" | "meter_den_down"] => {
+                if let Some(draft) = self.view.shared.new_project.as_mut() {
+                    const DENOMINATORS: [u8; 6] = [1, 2, 4, 8, 16, 32];
+                    let current = draft.denominator.parse::<u8>().unwrap_or(4);
+                    let index = DENOMINATORS.iter().position(|&v| v == current).unwrap_or(2);
+                    let next = if parts[1] == "meter_den_up" {
+                        (index + 1).min(5)
+                    } else {
+                        index.saturating_sub(1)
+                    };
+                    draft.denominator = DENOMINATORS[next].to_string();
+                }
+                self.rebuild();
+                Ok(())
+            }
             ["status", "open_project"] => {
                 self.request_action(PendingAction::OpenProject);
                 Ok(())

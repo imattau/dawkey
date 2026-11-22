@@ -194,6 +194,17 @@ async fn run_dialog(app: &Handle<App>, request: PlatformRequest) {
                 Err(e) => dispatch(&app, move |a| a.set_message(e.to_string())),
             });
         }),
+        PlatformRequest::CreateNewProject { draft } => {
+            choose_new_project(&draft.name).await.map(|path| {
+                if let Some(path) = path {
+                    dispatch(app, move |a| {
+                        if let Err(e) = a.create_new_project(&path, &draft) {
+                            a.set_message(e);
+                        }
+                    });
+                }
+            })
+        }
     };
     if let Err(e) = result {
         match e {
@@ -258,6 +269,20 @@ async fn choose_save_location(app: &Handle<App>) -> ashpd::Result<Option<PathBuf
         .accept_label("Save")
         .modal(true)
         .current_name(format!("{name}.dawkey").as_str())
+        .filter(FileFilter::new("Dawkey project").glob("*.dawkey"))
+        .send()
+        .await?
+        .response()?;
+    Ok(selected.uris().first().and_then(uri_to_path))
+}
+
+async fn choose_new_project(name: &str) -> ashpd::Result<Option<PathBuf>> {
+    let filename = format!("{}.dawkey", name.trim());
+    let selected = SelectedFiles::save_file()
+        .title("Create Project")
+        .accept_label("Create")
+        .modal(true)
+        .current_name(filename.as_str())
         .filter(FileFilter::new("Dawkey project").glob("*.dawkey"))
         .send()
         .await?

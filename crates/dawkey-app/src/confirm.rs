@@ -2,9 +2,6 @@
 //! Starting a new project, opening another one, and closing the window ask
 //! first when there are unsaved changes: save them, discard them, or cancel.
 
-use dawkey_core::Project;
-use dawkey_studio::LoadedProject;
-
 use crate::App;
 use crate::state::{PendingAction, PlatformRequest};
 
@@ -50,10 +47,8 @@ impl App {
         self.view.shared.confirm = None;
         match action {
             PendingAction::NewProject => {
-                let project = Project::new("Untitled");
-                if let Err(e) = self.studio.replace(LoadedProject::new(project)) {
-                    self.message = Some(e.to_string());
-                }
+                self.view.shared.new_project = Some(crate::view::new_project::defaults());
+                self.rebuild();
             }
             PendingAction::OpenProject => self
                 .platform_requests

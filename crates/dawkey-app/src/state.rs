@@ -341,6 +341,15 @@ pub enum PendingAction {
     Close,
 }
 
+/// Values collected before the GUI creates a new project.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct NewProjectDraft {
+    pub name: String,
+    pub tempo: String,
+    pub numerator: String,
+    pub denominator: String,
+}
+
 /// A field being typed in: what it sets, and the text so far.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TextEdit {
@@ -683,6 +692,8 @@ pub struct SharedViewState {
     pub delete_confirm: Option<DeleteConfirm>,
     /// The "save changes?" dialog is open, before doing this.
     pub confirm: Option<PendingAction>,
+    /// The new-project setup dialog is open.
+    pub new_project: Option<NewProjectDraft>,
     /// A field being typed in.
     pub text_edit: Option<TextEdit>,
     /// Unsaved changes to offer to recover (the dialog is open).
@@ -724,6 +735,7 @@ impl Default for SharedViewState {
             mixdown_confirm: None,
             delete_confirm: None,
             confirm: None,
+            new_project: None,
             text_edit: None,
             recovery: None,
             prefs_open: false,
@@ -1011,6 +1023,9 @@ pub enum PlatformRequest {
         position_s: f64,
     },
     ChooseProjectToOpen,
+    CreateNewProject {
+        draft: NewProjectDraft,
+    },
     ChooseSaveLocation {
         /// What to do once the project is saved (from the "save changes?"
         /// dialog).

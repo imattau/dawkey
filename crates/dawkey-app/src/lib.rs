@@ -50,8 +50,8 @@ pub use mcp_http::{
 pub use multi_window::{ExtraWindow, MonitorInfo, ViewRole, WIDESCREEN_ROLES, plan_windows};
 pub use prefs::{AudioChoice, LayoutChoice, PluginKind, Preferences, ThemeChoice};
 pub use state::{
-    ExportRange, ExportSettings, ImportRequest, Marker, Page, PendingAction, PlatformRequest,
-    RollLane, SharedViewState, ViewState,
+    ExportRange, ExportSettings, ImportRequest, Marker, NewProjectDraft, Page, PendingAction,
+    PlatformRequest, RollLane, SharedViewState, ViewState,
 };
 pub use theme::{SHADOW_MARGIN, Theme};
 
@@ -708,6 +708,50 @@ impl App {
         }
         self.rebuild();
         Ok(())
+    }
+
+    /// Creates and opens a saved blank project after setup has completed.
+    pub fn create_new_project(
+        &mut self,
+        path: &Path,
+        draft: &NewProjectDraft,
+    ) -> Result<(), String> {
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(draft.name.trim())
+            .trim();
+        if name.is_empty() {
+            return Err("enter a project name".into());
+        }
+        let tempo: f64 = draft
+            .tempo
+            .parse()
+            .ok()
+            .filter(|v| (20.0..=999.0).contains(v))
+            .ok_or_else(|| "tempo must be between 20 and 999 BPM".to_owned())?;
+        let numerator: u8 = draft
+            .numerator
+            .parse()
+            .ok()
+            .filter(|v| (1..=32).contains(v))
+            .ok_or_else(|| "time signature numerator must be from 1 to 32".to_owned())?;
+        let denominator: u8 = draft
+            .denominator
+            .parse()
+            .ok()
+            .filter(|v| u8::is_power_of_two(*v) && *v <= 32)
+            .ok_or_else(|| "time signature denominator must be 1, 2, 4, 8, 16 or 32".to_owned())?;
+        let mut project = dawkey_core::Project::new(name);
+        project.tempo_bpm = tempo;
+        project.time_signature = dawkey_core::TimeSignature {
+            numerator,
+            denominator,
+        };
+        let mut session = dawkey_core::Session::new(project);
+        session.save(Some(path)).map_err(|e| e.to_string())?;
+        let loaded = LoadedProject::open(path).map_err(|e| e.to_string())?;
+        self.replace_project(loaded)
     }
 
     pub fn access_tree(&mut self) -> AccessNode {
