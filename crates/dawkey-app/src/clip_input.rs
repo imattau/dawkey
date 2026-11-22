@@ -5,18 +5,65 @@
 //! go to the nearest place they fit, and edges stop at the next clip.
 
 use dawkey_core::{
-    Clip, ClipContent, ClipId, DuplicateClip, RepeatClip, SplitClip, Track, TrackId, TrimClip,
+    Clip, ClipContent, ClipId, DuplicateClip, RepeatClip, SetClipFades, SplitClip, Track, TrackId,
+    TrimClip,
 };
 use dawkey_ui::{Modifiers, Point};
 
 use crate::App;
 use crate::input::snap;
-use crate::state::{ClipEdge, Gesture};
+use crate::state::{ClipEdge, FadeEdge, Gesture};
 
 /// The shortest a drag trims a clip to, in seconds.
 const MIN_TRIM_S: f64 = 0.01;
 
 impl App {
+    pub(crate) fn on_fade_drag(
+        &mut self,
+        gesture: Gesture,
+        pos: Point,
+        end: bool,
+    ) -> Result<(), String> {
+        let Gesture::FadeClip {
+            clip,
+            edge,
+            start_s,
+            end_s,
+            grab_s,
+            mut fade_in_s,
+            mut fade_out_s,
+        } = gesture
+        else {
+            unreachable!("only called for fades")
+        };
+        let boundary = (self.time_at(pos.x) - grab_s).clamp(start_s, end_s);
+        match edge {
+            FadeEdge::In => fade_in_s = boundary - start_s,
+            FadeEdge::Out => fade_out_s = end_s - boundary,
+        }
+        if !end {
+            self.view.gesture = Some(Gesture::FadeClip {
+                clip,
+                edge,
+                start_s,
+                end_s,
+                grab_s,
+                fade_in_s,
+                fade_out_s,
+            });
+            return Ok(());
+        }
+        self.view.gesture = None;
+        self.execute(
+            SetClipFades {
+                clip,
+                fade_in_s,
+                fade_out_s,
+            }
+            .into(),
+        )
+    }
+
     /// Starts dragging `clip`'s start or end edge (and selects the clip).
     pub(crate) fn start_trim(
         &mut self,

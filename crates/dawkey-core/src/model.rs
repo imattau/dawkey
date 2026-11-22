@@ -251,6 +251,10 @@ fn is_zero_u32(v: &u32) -> bool {
     *v == 0
 }
 
+fn is_zero_u64(v: &u64) -> bool {
+    *v == 0
+}
+
 fn is_zero(v: &f64) -> bool {
     *v == 0.0
 }
@@ -556,6 +560,11 @@ pub struct Clip {
     /// past the end are cut off.
     pub length: u64,
     pub gain_db: f32,
+    /// Linear fade lengths in project frames. Ignored on MIDI clips.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub fade_in: u64,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub fade_out: u64,
     /// Silent, but kept (e.g. earlier takes of a loop recording).
     #[serde(default)]
     pub muted: bool,
@@ -1513,6 +1522,8 @@ mod tests {
             start,
             length,
             gain_db: 0.0,
+            fade_in: 0,
+            fade_out: 0,
             muted: false,
             lane: 0,
             name: None,

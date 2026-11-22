@@ -1061,6 +1061,8 @@ impl App {
                         ClipContent::Audio { source, offset } => ClipViewContent::Audio {
                             offset: *offset,
                             peaks: self.studio.peaks(*source),
+                            fade_in_s: project.frames_to_seconds(c.fade_in),
+                            fade_out_s: project.frames_to_seconds(c.fade_out),
                         },
                         ClipContent::Midi { controls, .. } => ClipViewContent::Midi {
                             controls: controls

@@ -3,7 +3,8 @@
 use std::path::Path;
 
 use dawkey_core::{
-    AddClip, AddMidiClip, AddTrack, ClipId, NoteSpec, Project, TrackId, TrackKind, Waveform,
+    AddClip, AddMidiClip, AddTrack, ClipId, NoteSpec, Project, SetClipFades, TrackId, TrackKind,
+    Waveform,
 };
 use dawkey_media::{AudioData, DecodedFile};
 use dawkey_studio::{AudioBackend, LoadedProject, Studio};
@@ -254,6 +255,46 @@ fn dragging_a_clip_moves_it_in_one_undo_step() {
     assert_eq!(clip_start_s(&app, clip), 3.0);
     app.studio.undo().unwrap();
     assert_eq!(clip_start_s(&app, clip), 1.0);
+}
+
+#[test]
+fn dragging_a_clip_fade_handle_sets_one_undoable_fade() {
+    let mut app = app();
+    let (_, clip) = add_clip(&mut app, 1.0);
+    app.studio
+        .execute(
+            SetClipFades {
+                clip: ClipId(clip),
+                fade_in_s: 0.25,
+                fade_out_s: 0.0,
+            }
+            .into(),
+        )
+        .unwrap();
+    let id = format!("clip/{clip}/fade_in");
+    assert!(app.access_tree().find(&id).is_some());
+    app.drag(
+        DragFrom::Widget(id),
+        Point::new(20.0, 0.0),
+        4,
+        Modifiers::default(),
+    )
+    .unwrap();
+    let project = app.studio.session().project();
+    let (_, updated) = project.clip(ClipId(clip)).unwrap();
+    assert!((project.frames_to_seconds(updated.fade_in) - 0.5).abs() < 1e-6);
+    assert_eq!(app.studio.session().undo_label(), Some("set_clip_fades"));
+    app.studio.undo().unwrap();
+    let (_, restored) = app.studio.session().project().clip(ClipId(clip)).unwrap();
+    assert!(
+        (app.studio
+            .session()
+            .project()
+            .frames_to_seconds(restored.fade_in)
+            - 0.25)
+            .abs()
+            < 1e-6
+    );
 }
 
 #[test]

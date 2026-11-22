@@ -153,6 +153,8 @@ commands! {
     MoveClip => "move_clip", Setter;
     RemoveClip => "remove_clip", Destructive;
     SetClipGain => "set_clip_gain", Setter;
+    SetClipFades => "set_clip_fades", Setter;
+    CrossfadeClips => "crossfade_clips", Setter;
     SetClipMute => "set_clip_mute", Setter;
     RenameClip => "rename_clip", Setter;
     SetTrackArm => "set_track_arm", Setter;
@@ -1792,6 +1794,8 @@ impl AddClip {
             start,
             length,
             gain_db: 0.0,
+            fade_in: 0,
+            fade_out: 0,
             muted: self.muted,
             lane: 0,
             name: None,
@@ -1880,6 +1884,91 @@ impl RemoveClip {
 pub struct SetClipGain {
     pub clip: ClipId,
     pub gain_db: f32,
+}
+
+/// Set an audio clip's linear fade lengths in seconds. Values are clamped to
+/// the clip length; MIDI clips do not support audio fades.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SetClipFades {
+    pub clip: ClipId,
+    pub fade_in_s: f64,
+    pub fade_out_s: f64,
+}
+
+impl SetClipFades {
+    fn lower(self, project: &mut Project) -> Result<(Vec<Edit>, Outcome), CoreError> {
+        let (_, clip) = project
+            .clip(self.clip)
+            .ok_or(CoreError::ClipNotFound(self.clip))?;
+        if !matches!(clip.content, ClipContent::Audio { .. }) {
+            return Err(CoreError::invalid(
+                "audio fades can only be set on audio clips",
+            ));
+        }
+        let fade_in = position_frames(project, self.fade_in_s)?;
+        let fade_out = position_frames(project, self.fade_out_s)?;
+        let fade_in = fade_in.min(clip.length);
+        let fade_out = fade_out.min(clip.length);
+        Ok((
+            vec![
+                Edit::SetClip {
+                    id: self.clip,
+                    prop: ClipProp::FadeIn(fade_in),
+                },
+                Edit::SetClip {
+                    id: self.clip,
+                    prop: ClipProp::FadeOut(fade_out),
+                },
+            ],
+            Outcome::none(),
+        ))
+    }
+}
+
+/// Apply a linear crossfade to two overlapping audio clips on one track.
+/// The first clip must start before the second and end during or before it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CrossfadeClips {
+    pub first: ClipId,
+    pub second: ClipId,
+}
+
+impl CrossfadeClips {
+    fn lower(self, project: &mut Project) -> Result<(Vec<Edit>, Outcome), CoreError> {
+        let (first_track, first) = project
+            .clip(self.first)
+            .ok_or(CoreError::ClipNotFound(self.first))?;
+        let (second_track, second) = project
+            .clip(self.second)
+            .ok_or(CoreError::ClipNotFound(self.second))?;
+        if first_track.id != second_track.id
+            || !matches!(first.content, ClipContent::Audio { .. })
+            || !matches!(second.content, ClipContent::Audio { .. })
+            || first.start >= second.start
+            || first.end() <= second.start
+            || first.end() > second.end()
+        {
+            return Err(CoreError::invalid(
+                "crossfade requires two overlapping audio clips on the same track, with the first ending after the second starts",
+            ));
+        }
+        let overlap = first.end() - second.start;
+        Ok((
+            vec![
+                Edit::SetClip {
+                    id: self.first,
+                    prop: ClipProp::FadeOut(overlap),
+                },
+                Edit::SetClip {
+                    id: self.second,
+                    prop: ClipProp::FadeIn(overlap),
+                },
+            ],
+            Outcome::none(),
+        ))
+    }
 }
 
 impl SetClipGain {
@@ -2276,6 +2365,14 @@ impl TrimClip {
         ];
         match &clip.content {
             ClipContent::Audio { source, offset } => {
+                edits.push(Edit::SetClip {
+                    id,
+                    prop: ClipProp::FadeIn(clip.fade_in.min(end - start)),
+                });
+                edits.push(Edit::SetClip {
+                    id,
+                    prop: ClipProp::FadeOut(clip.fade_out.min(end - start)),
+                });
                 let source_frames = project
                     .source(*source)
                     .ok_or(CoreError::SourceNotFound(*source))?
@@ -2620,6 +2717,10 @@ fn cut_clip(clip: &Clip, at: u64, id: ClipId) -> (Clip, Clip) {
         length: clip.length - cut,
         ..clip.clone()
     };
+    first.fade_in = clip.fade_in.min(cut);
+    first.fade_out = clip.fade_out.saturating_sub(clip.length - cut);
+    second.fade_in = clip.fade_in.saturating_sub(cut);
+    second.fade_out = clip.fade_out.min(clip.length - cut);
     match (&mut first.content, &mut second.content) {
         (ClipContent::Audio { .. }, ClipContent::Audio { offset, .. }) => *offset += cut,
         (
@@ -2680,6 +2781,12 @@ fn clip_edits(old: &Clip, new: Clip) -> Vec<Edit> {
     }
     if new.gain_db != old.gain_db {
         props.push(ClipProp::GainDb(new.gain_db));
+    }
+    if new.fade_in != old.fade_in {
+        props.push(ClipProp::FadeIn(new.fade_in));
+    }
+    if new.fade_out != old.fade_out {
+        props.push(ClipProp::FadeOut(new.fade_out));
     }
     if new.muted != old.muted {
         props.push(ClipProp::Muted(new.muted));
@@ -3001,6 +3108,8 @@ impl AddMidiClip {
             start,
             length,
             gain_db: 0.0,
+            fade_in: 0,
+            fade_out: 0,
             muted: self.muted,
             lane: 0,
             name: None,
@@ -4503,6 +4612,8 @@ impl AddDrumTrack {
             start: 0,
             length,
             gain_db: 0.0,
+            fade_in: 0,
+            fade_out: 0,
             muted: false,
             lane: 0,
             name: None,

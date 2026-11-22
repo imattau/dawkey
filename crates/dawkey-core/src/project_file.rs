@@ -255,6 +255,8 @@ mod tests {
                 start: 4800,
                 length: 9600,
                 gain_db: 0.0,
+                fade_in: 0,
+                fade_out: 0,
                 muted: false,
                 lane: 2,
                 name: Some("Hook".into()),

@@ -195,6 +195,8 @@ pub(crate) enum ClipViewContent {
         /// First source frame played.
         offset: u64,
         peaks: Option<Arc<Peaks>>,
+        fade_in_s: f64,
+        fade_out_s: f64,
     },
     Midi {
         notes: Arc<[NoteView]>,
@@ -912,6 +914,30 @@ fn toolbar(model: &ViewModel, view: &ViewState, ui: &UiState, window_w: f32) -> 
             } else {
                 SPLIT_MIN_W
             };
+    let selected_pair: Vec<(usize, &ClipView)> = model
+        .tracks
+        .iter()
+        .enumerate()
+        .flat_map(|(track, row)| row.clips.iter().map(move |clip| (track, clip)))
+        .filter(|(_, clip)| view.shared.selected_clips.contains(&clip.id))
+        .collect();
+    let show_crossfade = view.page == Page::Arrange
+        && selected_pair.len() == 2
+        && selected_pair[0].0 == selected_pair[1].0
+        && matches!(selected_pair[0].1.content, ClipViewContent::Audio { .. })
+        && matches!(selected_pair[1].1.content, ClipViewContent::Audio { .. })
+        && {
+            let (a, b) = (selected_pair[0].1, selected_pair[1].1);
+            let (first, second) = if a.start_s < b.start_s {
+                (a, b)
+            } else {
+                (b, a)
+            };
+            first.start_s < second.start_s
+                && first.start_s + first.length_s > second.start_s
+                && first.start_s + first.length_s <= second.start_s + second.length_s
+        }
+        && window_w >= 820.0;
     let show_auto = matches!(view.page, Page::Mixer | Page::Rack) || wide;
     // "Export…" needs more room with the Split button and the piano roll
     // toggle.
@@ -922,6 +948,7 @@ fn toolbar(model: &ViewModel, view: &ViewState, ui: &UiState, window_w: f32) -> 
     // and disappears in narrow windows rather than overflowing.
     let used_extra = if can_edit { 95.0 } else { 0.0 }
         + if show_split { 62.0 } else { 0.0 }
+        + if show_crossfade { 92.0 } else { 0.0 }
         + if show_auto && show_snap { 62.0 } else { 0.0 }
         + if show_tempo && (can_edit || show_mode) {
             100.0
@@ -1100,6 +1127,17 @@ fn toolbar(model: &ViewModel, view: &ViewState, ui: &UiState, window_w: f32) -> 
                 .text("Split")
                 .padding(Insets::xy(12.0, 0.0))
                 .height(Sizing::Fixed(28.0))
+        }))
+        .children(show_crossfade.then(|| {
+            button(
+                "toolbar/crossfade",
+                "Crossfade the selected overlapping audio clips",
+                ui,
+                None,
+            )
+            .text("Crossfade")
+            .padding(Insets::xy(12.0, 0.0))
+            .height(Sizing::Fixed(28.0))
         }))
         .child(
             button("toolbar/import", "Import audio", ui, None)

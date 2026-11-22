@@ -937,9 +937,16 @@ fn repeats(clip: &ClipView, until_s: f64, rate: f64) -> impl Iterator<Item = Cli
 fn trim_preview(clip: &ClipView, start_s: f64, end_s: f64, rate: f64) -> ClipView {
     let shift_s = start_s - clip.start_s;
     let content = match &clip.content {
-        ClipViewContent::Audio { offset, peaks } => ClipViewContent::Audio {
+        ClipViewContent::Audio {
+            offset,
+            peaks,
+            fade_in_s,
+            fade_out_s,
+        } => ClipViewContent::Audio {
             offset: (*offset as f64 + shift_s * rate).round().max(0.0) as u64,
             peaks: peaks.clone(),
+            fade_in_s: (fade_in_s - shift_s.max(0.0)).max(0.0).min(end_s - start_s),
+            fade_out_s: fade_out_s.min(end_s - start_s),
         },
         ClipViewContent::Midi { notes, controls } => ClipViewContent::Midi {
             notes: notes
@@ -1056,6 +1063,7 @@ fn clip_node(
     if let ClipViewContent::Audio {
         offset,
         peaks: Some(peaks),
+        ..
     } = &clip.content
         && visible_to > visible_from
     {
@@ -1076,6 +1084,59 @@ fn clip_node(
                     color: color.mix(pal().text, 0.35),
                 }),
         );
+    }
+    if let ClipViewContent::Audio {
+        fade_in_s,
+        fade_out_s,
+        ..
+    } = &clip.content
+    {
+        let y0 = h - 5.0;
+        let y1 = 20.0;
+        if *fade_in_s > 0.0 {
+            let edge_x = (x_of(view, start_s + fade_in_s) - x).clamp(0.0, w);
+            node = node.child(
+                Node::row()
+                    .absolute(Rect::new(0.0, 18.0, w, h - 22.0))
+                    .paint(Paint::Polyline {
+                        points: vec![Point::new(0.0, y0 - 18.0), Point::new(edge_x, y1 - 18.0)]
+                            .into(),
+                        width: 1.0,
+                        color: pal().accent,
+                    }),
+            );
+            node = node.child(
+                Node::row()
+                    .id(format!("clip/{}/fade_in", clip.id))
+                    .accessible_label("Audio fade in handle")
+                    .clickable()
+                    .draggable()
+                    .cursor(Cursor::ResizeHorizontal)
+                    .absolute(Rect::new((edge_x - 5.0).clamp(0.0, w - 8.0), 0.0, 10.0, h)),
+            );
+        }
+        if *fade_out_s > 0.0 {
+            let edge_x = (x_of(view, end_s - fade_out_s) - x).clamp(0.0, w);
+            node = node.child(
+                Node::row()
+                    .absolute(Rect::new(0.0, 18.0, w, h - 22.0))
+                    .paint(Paint::Polyline {
+                        points: vec![Point::new(edge_x, y1 - 18.0), Point::new(w, y0 - 18.0)]
+                            .into(),
+                        width: 1.0,
+                        color: pal().accent,
+                    }),
+            );
+            node = node.child(
+                Node::row()
+                    .id(format!("clip/{}/fade_out", clip.id))
+                    .accessible_label("Audio fade out handle")
+                    .clickable()
+                    .draggable()
+                    .cursor(Cursor::ResizeHorizontal)
+                    .absolute(Rect::new((edge_x - 5.0).clamp(0.0, w - 8.0), 0.0, 10.0, h)),
+            );
+        }
     }
     if let ClipViewContent::Midi { notes, .. } = &clip.content {
         let visible = (x_of(view, visible_from) - x)..(x_of(view, visible_to) - x);

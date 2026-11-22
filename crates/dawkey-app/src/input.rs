@@ -3,17 +3,18 @@
 //! project goes through studio commands, so it's undoable like any MCP call.
 
 use dawkey_core::{
-    AddDrumTrack, AddGuitarTrack, AddTrack, AutomationTarget, ClipId, Command, MoveClip, Project,
-    RemoveClip, RemoveTrackSend, RestoreDeletedTracks, RestoreMixdownTracks, SetLoop, SetPunch,
-    SetTrackArm, SetTrackColor, SetTrackGain, SetTrackInput, SetTrackMute, SetTrackOutput,
-    SetTrackPan, SetTrackSend, SetTrackSolo, TrackId, TrackKind,
+    AddDrumTrack, AddGuitarTrack, AddTrack, AutomationTarget, ClipContent, ClipId, Command,
+    CrossfadeClips, MoveClip, Project, RemoveClip, RemoveTrackSend, RestoreDeletedTracks,
+    RestoreMixdownTracks, SetLoop, SetPunch, SetTrackArm, SetTrackColor, SetTrackGain,
+    SetTrackInput, SetTrackMute, SetTrackOutput, SetTrackPan, SetTrackSend, SetTrackSolo, TrackId,
+    TrackKind,
 };
 use dawkey_ui::{ChromeAction, DragPhase, Modifiers, MouseButton, Point, Rect, UiAction};
 
 use crate::App;
 use crate::state::{
-    ClipEdge, DeleteConfirm, FADER_H, Gesture, ImportRequest, MAX_ZOOM, MIN_SPLIT, MIN_ZOOM,
-    MixdownConfirm, PAN_W, Page, PendingAction, PlatformRequest, RangeKind, SEND_W,
+    ClipEdge, DeleteConfirm, FADER_H, FadeEdge, Gesture, ImportRequest, MAX_ZOOM, MIN_SPLIT,
+    MIN_ZOOM, MixdownConfirm, PAN_W, Page, PendingAction, PlatformRequest, RangeKind, SEND_W,
     SplitOrientation, TextField, TrackMenu, TrackPopup, TrackPopupKind, takes_shown, track_tops,
 };
 use crate::view::{db_from_position, position_from_db};
@@ -186,6 +187,21 @@ impl App {
                 Ok(())
             }
             ["toolbar", "split"] => self.split_selected(),
+            ["toolbar", "crossfade"] => {
+                let mut clips = self.view.shared.selected_clips.clone();
+                if clips.len() != 2 {
+                    return Err("select two overlapping audio clips to crossfade".into());
+                }
+                let project = self.studio.session().project();
+                clips.sort_by_key(|id| project.clip(*id).map_or(u64::MAX, |(_, clip)| clip.start));
+                self.execute(
+                    CrossfadeClips {
+                        first: clips[0],
+                        second: clips[1],
+                    }
+                    .into(),
+                )
+            }
             ["toolbar", "import"] => {
                 let position_s = self.studio.transport().position_s;
                 self.platform_requests
@@ -546,6 +562,7 @@ impl App {
                 Ok(())
             }
             Gesture::TrimClip { .. } => self.on_trim_drag(gesture, pos, end, modifiers),
+            Gesture::FadeClip { .. } => self.on_fade_drag(gesture, pos, end),
             Gesture::Repeat { .. } => self.on_repeat_drag(gesture, pos, end, modifiers),
             Gesture::ResizeSplit { start_split } => {
                 let delta = if self.view.mixer_rack_orientation == SplitOrientation::Stacked {
@@ -858,6 +875,37 @@ impl App {
                     ClipEdge::End
                 };
                 Some(self.start_trim(clip, edge, origin)?)
+            }
+            ["clip", clip, edge @ ("fade_in" | "fade_out")] => {
+                let clip = ClipId(parse_id(clip)?);
+                let (_, c) = project
+                    .clip(clip)
+                    .ok_or_else(|| format!("clip {clip} does not exist"))?;
+                let ClipContent::Audio { .. } = c.content else {
+                    return Ok(None);
+                };
+                let start_s = project.frames_to_seconds(c.start);
+                let end_s = project.frames_to_seconds(c.end());
+                let fade_in_s = project.frames_to_seconds(c.fade_in.min(c.length));
+                let fade_out_s = project.frames_to_seconds(c.fade_out.min(c.length));
+                let edge = if edge == "fade_in" {
+                    FadeEdge::In
+                } else {
+                    FadeEdge::Out
+                };
+                let boundary = match edge {
+                    FadeEdge::In => start_s + fade_in_s,
+                    FadeEdge::Out => end_s - fade_out_s,
+                };
+                Some(Gesture::FadeClip {
+                    clip,
+                    edge,
+                    start_s,
+                    end_s,
+                    grab_s: self.time_at(origin.x) - boundary,
+                    fade_in_s,
+                    fade_out_s,
+                })
             }
             // Dragging a clip by its name moves it, unless the name is
             // being typed.

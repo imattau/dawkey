@@ -160,9 +160,22 @@ pub(crate) fn render_track(
             let lanes = left[dst..dst + len]
                 .iter_mut()
                 .zip(&mut right[dst..dst + len]);
-            for ((l, r), (a, b)) in lanes.zip(first.iter().zip(second)) {
-                *l += a * clip.gain;
-                *r += b * clip.gain;
+            for (i, ((l, r), (a, b))) in lanes.zip(first.iter().zip(second)).enumerate() {
+                let frame = from + i as u64 - clip.start;
+                let fade_in = if clip.fade_in <= 1 {
+                    1.0
+                } else {
+                    (frame as f32 / (clip.fade_in - 1) as f32).min(1.0)
+                };
+                let remaining = clip.end - (from + i as u64);
+                let fade_out = if clip.fade_out <= 1 {
+                    1.0
+                } else {
+                    (remaining.saturating_sub(1) as f32 / (clip.fade_out - 1) as f32).min(1.0)
+                };
+                let gain = clip.gain * fade_in.min(fade_out);
+                *l += a * gain;
+                *r += b * gain;
             }
         }
     }

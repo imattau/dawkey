@@ -316,6 +316,8 @@ pub(crate) struct ClipNode {
     pub(crate) data: Arc<AudioData>,
     /// Clip gain (mono sources go to both channels).
     pub(crate) gain: f32,
+    pub(crate) fade_in: u64,
+    pub(crate) fade_out: u64,
 }
 
 /// A plugin in a track's chain.
@@ -1063,6 +1065,8 @@ fn compile_clips(track: &Track, media: &MediaPool) -> Vec<ClipNode> {
                 offset,
                 data: Arc::clone(data),
                 gain: db_to_gain(clip.gain_db),
+                fade_in: clip.fade_in.min(length),
+                fade_out: clip.fade_out.min(length),
             })
         })
         .collect()

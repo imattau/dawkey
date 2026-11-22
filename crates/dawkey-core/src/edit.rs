@@ -86,6 +86,8 @@ pub(crate) enum ClipProp {
     /// An audio clip's first source frame.
     Offset(u64),
     GainDb(f32),
+    FadeIn(u64),
+    FadeOut(u64),
     Muted(bool),
     /// `None` is the default label.
     Name(Option<String>),
@@ -194,6 +196,12 @@ impl Edit {
                     }
                     ClipProp::GainDb(v) => {
                         ClipProp::GainDb(std::mem::replace(&mut clip.gain_db, v))
+                    }
+                    ClipProp::FadeIn(v) => {
+                        ClipProp::FadeIn(std::mem::replace(&mut clip.fade_in, v))
+                    }
+                    ClipProp::FadeOut(v) => {
+                        ClipProp::FadeOut(std::mem::replace(&mut clip.fade_out, v))
                     }
                     ClipProp::Muted(v) => ClipProp::Muted(std::mem::replace(&mut clip.muted, v)),
                     ClipProp::Name(v) => ClipProp::Name(std::mem::replace(&mut clip.name, v)),

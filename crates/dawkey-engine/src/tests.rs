@@ -6,9 +6,10 @@ use std::f32::consts::FRAC_1_SQRT_2;
 use std::sync::Arc;
 
 use dawkey_core::{
-    AddClip, AddMidiClip, ClipId, ControlSpec, Controller, InputChannels, NoteSpec,
-    RemoveMidiNotes, RemoveTrack, Session, SetLoop, SetTrackArm, SetTrackGain, SetTrackMidiInput,
-    SetTrackMidiOutput, SetTrackMute, SetTrackPan, SetTrackSolo, SourceId, TimeRange, TrackId,
+    AddClip, AddMidiClip, ClipId, ControlSpec, Controller, CrossfadeClips, InputChannels, NoteSpec,
+    RemoveMidiNotes, RemoveTrack, Session, SetClipFades, SetLoop, SetTrackArm, SetTrackGain,
+    SetTrackMidiInput, SetTrackMidiOutput, SetTrackMute, SetTrackPan, SetTrackSolo, SourceId,
+    TimeRange, TrackId,
 };
 use dawkey_media::AudioData;
 
@@ -155,6 +156,50 @@ fn stereo_clip_keeps_channels_and_applies_gain() {
     let g = 10f32.powf(-6.0 / 20.0);
     assert!(out[0].iter().all(|&s| close(s, g)));
     assert!(out[1].iter().all(|&s| close(s, -0.5 * g)));
+}
+
+#[test]
+fn audio_clip_fades_are_sample_accurate() {
+    let mut f = Fixture::new();
+    let src = f.source(vec![ones(10)]);
+    let track = f.place(src, 0.0);
+    let clip = f.session.project().track(track).unwrap().clips[0].id;
+    f.session
+        .execute(
+            SetClipFades {
+                clip,
+                fade_in_s: 5.0 / f64::from(RATE),
+                fade_out_s: 5.0 / f64::from(RATE),
+            }
+            .into(),
+        )
+        .unwrap();
+
+    let out = f.render(0, 10)[0].clone();
+    let center = FRAC_1_SQRT_2;
+    assert!(close(out[0], 0.0));
+    assert!(close(out[4], center));
+    assert!(close(out[5], center));
+    assert!(close(out[9], 0.0));
+}
+
+#[test]
+fn crossfade_command_mixes_overlapping_clips_at_unity() {
+    let mut f = Fixture::new();
+    let src = f.source(vec![ones(10)]);
+    let track = f.place(src, 0.0);
+    let first = f.session.project().track(track).unwrap().clips[0].id;
+    let second = f
+        .session
+        .execute(AddClip::new(src, Some(track), 5.0 / f64::from(RATE)).into())
+        .unwrap()
+        .clip
+        .unwrap();
+    f.session
+        .execute(CrossfadeClips { first, second }.into())
+        .unwrap();
+    let out = f.render(5, 5)[0].clone();
+    assert!(out.iter().all(|&sample| close(sample, FRAC_1_SQRT_2)));
 }
 
 #[test]

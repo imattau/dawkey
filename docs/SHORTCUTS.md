@@ -55,6 +55,10 @@ The Stop button jumps to the start when the transport is already stopped. The bu
 | Delete, Backspace | Delete the selected clip |
 | Escape | Deselect the clip |
 
+Select two overlapping audio clips on the same track to show the toolbar's
+Crossfade button. Crossfades can also be created through `crossfade_clips`;
+the arrange view keeps its no-overlap placement rule.
+
 Clips never overlap in the window: a moved, copied or pasted clip goes to the nearest space it fits in, and trims and repeats stop at the next clip.
 
 ### Takes

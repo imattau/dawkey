@@ -143,6 +143,16 @@ pub(crate) enum Gesture {
         start_s: f64,
         end_s: f64,
     },
+    /// Dragging an audio clip's fade boundary; committed on release.
+    FadeClip {
+        clip: ClipId,
+        edge: FadeEdge,
+        start_s: f64,
+        end_s: f64,
+        grab_s: f64,
+        fade_in_s: f64,
+        fade_out_s: f64,
+    },
     /// Ctrl-dragging a clip's end edge: on release, one `repeat_clip` lays
     /// copies of it end to end up to there.
     Repeat {
@@ -326,6 +336,12 @@ pub(crate) enum Gesture {
 pub(crate) enum ClipEdge {
     Start,
     End,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FadeEdge {
+    In,
+    Out,
 }
 
 /// Something that would discard unsaved changes, waiting for the user to
