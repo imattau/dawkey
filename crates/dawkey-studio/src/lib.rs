@@ -654,6 +654,7 @@ impl Studio {
         options: StudioOptions,
     ) -> Result<Self, StudioError> {
         let rate = loaded.session.project().sample_rate;
+        dawkey_plugins::warm_sample_kits(rate);
         let mut plugins = Plugins::new(rate);
         if let Some((search, cache)) = options.plugin_search {
             plugins.set_search(search, cache);
@@ -718,6 +719,9 @@ impl Studio {
             tracing::warn!("finishing the recording: {e}");
         }
         let rate = loaded.session.project().sample_rate;
+        if rate != self.sample_rate() {
+            dawkey_plugins::warm_sample_kits(rate);
+        }
         self.plugins.reset(rate);
         if rate != self.sample_rate() {
             let (engine, backend) = start_backend(rate, &self.backend_kind)?;

@@ -41,7 +41,7 @@ use dawkey_engine::PluginProcessor;
 use serde::{Deserialize, Serialize};
 
 pub use bridge::{BridgeProgram, Sandbox, run_plugin_host};
-pub use builtin::{DRUMS_ID, SampleKit, builtin_plugin, builtin_plugins};
+pub use builtin::{DRUMS_ID, SampleKit, builtin_plugin, builtin_plugins, warm_sample_kits};
 pub use dawkey_dsp::{cab_response_db, eq_response_db};
 pub use lv2::{StateProperty, StateValue, lv2_state_properties, lv2_state_set};
 pub use scan::{

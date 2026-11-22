@@ -173,6 +173,26 @@ type SampleKitCache = HashMap<(SampleKit, u32), Arc<SampleKitData>>;
 static SAMPLE_KIT_CACHE: LazyLock<Mutex<SampleKitCache>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// Decodes every built-in sample kit for `sample_rate` on a thread of its
+/// own, so the first [`apply_drum_kit`](crate::builtin::load) for each kit
+/// hits [`SAMPLE_KIT_CACHE`] instead of decoding inline on whatever thread
+/// called it (the control thread, which for the window is the thread
+/// dispatching input: see `Studio::sync`). Decoding is cheap enough overall
+/// (six kits) that one thread doing them in turn is plenty; if it can't even
+/// be spawned, the first real use just decodes inline as before.
+pub fn warm_sample_kits(sample_rate: u32) {
+    let spawned = std::thread::Builder::new()
+        .name("dawkey-warm-kits".into())
+        .spawn(move || {
+            for kit in SampleKit::ALL {
+                load_sample_kit(kit, sample_rate);
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("warming sample kits: {e}");
+    }
+}
+
 fn load_sample_kit(kit: SampleKit, sample_rate: u32) -> Arc<SampleKitData> {
     let mut cache = SAMPLE_KIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     cache
@@ -517,5 +537,26 @@ mod tests {
         let a = load_sample_kit(SampleKit::AcousticVcsl, 44_100);
         let b = load_sample_kit(SampleKit::AcousticVcsl, 44_100);
         assert!(Arc::ptr_eq(&a, &b));
+    }
+
+    #[test]
+    fn warm_sample_kits_decodes_every_kit_in_the_background() {
+        // A sample rate no other test uses, so this starts from a cache miss.
+        let rate = 37_000;
+        warm_sample_kits(rate);
+        let cached = |kit| {
+            SAMPLE_KIT_CACHE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key(&(kit, rate))
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !SampleKit::ALL.iter().all(|&k| cached(k)) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "warm_sample_kits didn't populate the cache in time"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 }
